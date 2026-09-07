@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>119 事故救援權益帳戶</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+  <div id="app" class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden p-6 space-y-6">
+    <div class="text-center">
+      <h1 class="text-2xl font-bold text-gray-800">119 救援權益帳戶</h1>
+      <p class="text-sm text-gray-500 mt-1">守護行車安全的第一道防線</p>
+    </div>
+
+    <div id="loading" class="text-center text-gray-500 py-8">正在連線會員系統...</div>
+    <div id="error-msg" class="hidden p-3 bg-red-50 text-red-700 text-xs rounded-lg break-words"></div>
+
+    <!-- 註冊表單 -->
+    <div id="register-view" class="hidden space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700">姓名</label>
+        <input id="reg-name" type="text" class="w-full mt-1 p-3 border rounded-lg focus:ring-2 focus:ring-red-500 outline-none" placeholder="請輸入姓名">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">手機號碼</label>
+        <input id="reg-phone" type="tel" class="w-full mt-1 p-3 border rounded-lg focus:ring-2 focus:ring-red-500 outline-none" placeholder="09xxxxxxxx">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">推薦碼（選填）</label>
+        <input id="reg-ref" type="text" class="w-full mt-1 p-3 border rounded-lg bg-gray-50" placeholder="若有推薦人請填寫">
+      </div>
+      <button onclick="handleRegister()" class="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition duration-200">
+        領取 30 分鐘救援權益
+      </button>
+    </div>
+
+    <!-- 會員卡片 -->
+    <div id="dashboard-view" class="hidden space-y-6">
+      <div class="bg-gradient-to-r from-red-500 to-red-600 rounded-xl p-5 text-white shadow-lg">
+        <p class="text-sm opacity-80" id="user-name">會員</p>
+        <div class="mt-2 flex items-baseline justify-between">
+          <div>
+            <span class="text-4xl font-extrabold" id="user-minutes">0</span>
+            <span class="text-lg ml-1">分鐘</span>
+          </div>
+          <span class="text-xs bg-red-700 px-2.5 py-1 rounded-full uppercase tracking-wider">可用時數</span>
+        </div>
+      </div>
+
+      <div class="bg-gray-50 p-4 rounded-xl border border-gray-100">
+        <div class="flex justify-between text-sm text-gray-600 mb-1">
+          <span>推薦獎勵進度</span>
+          <span id="ref-count">已推薦 0 / 3 人</span>
+        </div>
+        <p class="text-xs text-gray-400 mb-4">每推薦 1 人完成加入加贈 30 分鐘，上限 120 分鐘</p>
+        <button onclick="shareReferral()" class="w-full py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2">
+          推薦好友・賺取時數
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://dizyvpzxixrvtrmudfgd.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_qwhSuOqHO1kaZaNWf1GF2w_O-zSFXWx";
+    const LIFF_ID = "2011430077-oJ4uiKa2";
+
+    let supabase;
+    let currentLineUserId = "";
+    let currentRefCode = "";
+
+    function showError(msg) {
+      document.getElementById('loading').classList.add('hidden');
+      const errBox = document.getElementById('error-msg');
+      errBox.innerText = msg;
+      errBox.classList.remove('hidden');
+    }
+
+    async function initApp() {
+      try {
+        if (!window.supabase) throw new Error("Supabase 函式庫未載入");
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+
+        const profile = await liff.getProfile();
+        currentLineUserId = profile.userId;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const refParam = urlParams.get('ref');
+        if (refParam) document.getElementById('reg-ref').value = refParam;
+
+        await checkMembership();
+      } catch (err) {
+        showError("啟動異常: " + err.message);
+      }
+    }
+
+    async function checkMembership() {
+      try {
+        const { data: member, error } = await supabase
+          .from('members')
+          .select('*, hour_ledgers(balance_after, change_type)')
+          .eq('line_user_id', currentLineUserId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        document.getElementById('loading').classList.add('hidden');
+
+        if (!member) {
+          document.getElementById('register-view').classList.remove('hidden');
+        } else {
+          currentRefCode = member.referral_code;
+          const ledgers = member.hour_ledgers || [];
+          const latestBalance = ledgers.length > 0 ? ledgers[ledgers.length - 1].balance_after : 0;
+          const refRewards = ledgers.filter(l => l.change_type === 'REFERRAL').length;
+
+          document.getElementById('user-name').innerText = `${member.name} 您好`;
+          document.getElementById('user-minutes').innerText = latestBalance;
+          document.getElementById('ref-count').innerText = `已推薦 ${refRewards} / 3 人`;
+          document.getElementById('dashboard-view').classList.remove('hidden');
+        }
+      } catch (err) {
+        showError("查詢會員失敗: " + err.message);
+      }
+    }
+
+    async function handleRegister() {
+      const name = document.getElementById('reg-name').value.trim();
+      const phone = document.getElementById('reg-phone').value.trim();
+      const refCode = document.getElementById('reg-ref').value.trim();
+
+      if (!name || !phone) return alert('請填寫完整姓名與手機號碼');
+
+      try {
+        const { data, error } = await supabase.rpc('register_member', {
+          p_line_user_id: currentLineUserId,
+          p_phone: phone,
+          p_name: name,
+          p_ref_code: refCode
+        });
+
+        if (error || !data.success) {
+          alert(data?.message || error?.message || '註冊失敗');
+        } else {
+          alert('加入成功！已為您入帳 30 分鐘救援權益');
+          location.reload();
+        }
+      } catch (err) {
+        alert("連線錯誤: " + err.message);
+      }
+    }
+
+    function shareReferral() {
+      const shareUrl = `https://liff.line.me/${LIFF_ID}?ref=${currentRefCode}`;
+      const text = `我送你 30 分鐘 119 事故資訊協助，平常可能用不到，真出事的時候你會知道它值多少！點擊加入領取：${shareUrl}`;
+      navigator.clipboard.writeText(text).then(() => {
+        alert('專屬推薦邀請已複製到剪貼簿，可直接貼上傳給好友！');
+      }).catch(() => {
+        prompt('請手動複製以下推薦文字與連結：', text);
+      });
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
