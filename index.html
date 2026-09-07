@@ -15,10 +15,10 @@
       <p class="text-sm text-gray-500 mt-1">守護行車安全的第一道防線</p>
     </div>
 
+    <!-- 狀態提示 -->
     <div id="loading" class="text-center text-gray-500 py-8">正在連線會員系統...</div>
-    <div id="error-msg" class="hidden p-3 bg-red-50 text-red-700 text-xs rounded-lg break-words"></div>
 
-    <!-- 註冊表單 -->
+    <!-- 1. 註冊畫面 -->
     <div id="register-view" class="hidden space-y-4">
       <div>
         <label class="block text-sm font-medium text-gray-700">姓名</label>
@@ -37,7 +37,7 @@
       </button>
     </div>
 
-    <!-- 會員卡片 -->
+    <!-- 2. 會員中心 -->
     <div id="dashboard-view" class="hidden space-y-6">
       <div class="bg-gradient-to-r from-red-500 to-red-600 rounded-xl p-5 text-white shadow-lg">
         <p class="text-sm opacity-80" id="user-name">會員</p>
@@ -64,27 +64,31 @@
   </div>
 
   <script>
+    // 全域錯誤自動彈窗顯示
+    window.onerror = function(message, source, lineno, colno, error) {
+      alert("系統錯誤提示: " + message + " (第 " + lineno + " 行)");
+      return true;
+    };
+
     const SUPABASE_URL = "https://dizyvpzxixrvtrmudfgd.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_qwhSuOqHO1kaZaNWf1GF2w_O-zSFXWx";
     const LIFF_ID = "2011430077-oJ4uiKa2";
 
-    let supabase;
+    let supabaseClient;
     let currentLineUserId = "";
     let currentRefCode = "";
 
-    function showError(msg) {
-      document.getElementById('loading').classList.add('hidden');
-      const errBox = document.getElementById('error-msg');
-      errBox.innerText = msg;
-      errBox.classList.remove('hidden');
-    }
-
     async function initApp() {
       try {
-        if (!window.supabase) throw new Error("Supabase 函式庫未載入");
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        if (!window.supabase) {
+          alert("錯誤：Supabase 函式庫加載失敗，請檢查網路連線");
+          return;
+        }
+
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         await liff.init({ liffId: LIFF_ID });
+
         if (!liff.isLoggedIn()) {
           liff.login();
           return;
@@ -95,23 +99,29 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const refParam = urlParams.get('ref');
-        if (refParam) document.getElementById('reg-ref').value = refParam;
+        if (refParam) {
+          const refInput = document.getElementById('reg-ref');
+          if (refInput) refInput.value = refParam;
+        }
 
         await checkMembership();
       } catch (err) {
-        showError("啟動異常: " + err.message);
+        alert("初始化失敗: " + (err.message || JSON.stringify(err)));
       }
     }
 
     async function checkMembership() {
       try {
-        const { data: member, error } = await supabase
+        const { data: member, error } = await supabaseClient
           .from('members')
           .select('*, hour_ledgers(balance_after, change_type)')
           .eq('line_user_id', currentLineUserId)
           .maybeSingle();
 
-        if (error) throw error;
+        if (error) {
+          alert("資料庫讀取失敗: " + error.message);
+          return;
+        }
 
         document.getElementById('loading').classList.add('hidden');
 
@@ -129,7 +139,7 @@
           document.getElementById('dashboard-view').classList.remove('hidden');
         }
       } catch (err) {
-        showError("查詢會員失敗: " + err.message);
+        alert("查詢會員異常: " + err.message);
       }
     }
 
@@ -141,7 +151,7 @@
       if (!name || !phone) return alert('請填寫完整姓名與手機號碼');
 
       try {
-        const { data, error } = await supabase.rpc('register_member', {
+        const { data, error } = await supabaseClient.rpc('register_member', {
           p_line_user_id: currentLineUserId,
           p_phone: phone,
           p_name: name,
