@@ -64,9 +64,8 @@
   </div>
 
   <script>
-    // 全域錯誤自動彈窗顯示
     window.onerror = function(message, source, lineno, colno, error) {
-      alert("系統錯誤提示: " + message + " (第 " + lineno + " 行)");
+      alert("系統錯誤: " + message + " (第 " + lineno + " 行)");
       return true;
     };
 
@@ -81,7 +80,7 @@
     async function initApp() {
       try {
         if (!window.supabase) {
-          alert("錯誤：Supabase 函式庫加載失敗，請檢查網路連線");
+          alert("錯誤：Supabase 函式庫加載失敗");
           return;
         }
 
@@ -106,15 +105,16 @@
 
         await checkMembership();
       } catch (err) {
-        alert("初始化失敗: " + (err.message || JSON.stringify(err)));
+        alert("初始化異常: " + (err.message || JSON.stringify(err)));
       }
     }
 
     async function checkMembership() {
       try {
+        // 明確指定透過 member_id 外鍵關聯，解決多重外鍵衝突
         const { data: member, error } = await supabaseClient
           .from('members')
-          .select('*, hour_ledgers(balance_after, change_type)')
+          .select('*, hour_ledgers!hour_ledgers_member_id_fkey(balance_after, change_type)')
           .eq('line_user_id', currentLineUserId)
           .maybeSingle();
 
