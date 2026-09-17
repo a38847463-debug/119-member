@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>119 會員時數管理後台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-100 min-h-screen p-4 md:p-8">
+  <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+    
+    <!-- 頁面標題 -->
+    <div class="bg-slate-800 text-white p-5 flex justify-between items-center">
+      <div>
+        <h1 class="text-xl font-bold">119 救援權益・時數管理後台</h1>
+        <p class="text-xs text-slate-400 mt-0.5">車主諮詢服務手動核銷扣時</p>
+      </div>
+      <span class="bg-red-600 text-xs px-2.5 py-1 rounded font-mono">ADMIN ONLY</span>
+    </div>
+
+    <div class="p-6 space-y-6">
+      <!-- 1. 密碼驗證區 -->
+      <div id="auth-section" class="bg-amber-50 border border-amber-200 p-4 rounded-lg">
+        <label class="block text-sm font-bold text-amber-800 mb-1">管理員登入金鑰 (預設: 119rescue)</label>
+        <div class="flex gap-2">
+          <input id="admin-pwd" type="password" placeholder="請輸入管理密碼" class="flex-1 p-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500">
+          <button onclick="unlockAdmin()" class="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">驗證解鎖</button>
+        </div>
+      </div>
+
+      <!-- 2. 操作主區域 (驗證後顯示) -->
+      <div id="main-section" class="hidden space-y-6">
+        <!-- 搜尋欄位 -->
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1">查詢會員 (輸入姓名或手機)</label>
+          <div class="flex gap-2">
+            <input id="search-input" type="text" placeholder="例：丁一名 或 0911222333" class="flex-1 p-3 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500">
+            <button onclick="searchMember()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-semibold flex items-center gap-1">
+              搜尋
+            </button>
+          </div>
+        </div>
+
+        <!-- 查詢結果與扣時操作卡片 -->
+        <div id="member-card" class="hidden border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
+          <div class="flex justify-between items-start border-b pb-3">
+            <div>
+              <div class="text-lg font-bold text-slate-800" id="card-name">--</div>
+              <div class="text-xs text-slate-500 mt-0.5" id="card-phone">--</div>
+              <div class="text-xs text-slate-400 mt-0.5" id="card-ref">--</div>
+            </div>
+            <div class="text-right">
+              <span class="text-xs text-slate-500 block">目前可用餘額</span>
+              <span class="text-3xl font-extrabold text-red-600" id="card-balance">0</span>
+              <span class="text-xs text-slate-500">分鐘</span>
+            </div>
+          </div>
+
+          <!-- 扣除操作表單 -->
+          <div class="space-y-3 pt-1">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">扣除分鐘數</label>
+                <input id="deduct-mins" type="number" min="1" step="5" placeholder="例如：15 或 30" class="w-full p-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-500 bg-white">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">服務事由備註</label>
+                <input id="deduct-notes" type="text" placeholder="例：肇責分析電話諮詢" class="w-full p-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-500 bg-white">
+              </div>
+            </div>
+            <button onclick="submitDeduction()" class="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-sm shadow transition">
+              確認扣除諮詢時數
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://dizyvpzxixrvtrmudfgd.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_qwhSuOqHO1kaZaNWf1GF2w_O-zSFXWx";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // 預設管理員密碼（可自行在下方改掉）
+    const ADMIN_SECRET = "119rescue";
+    let selectedMember = null;
+
+    function unlockAdmin() {
+      const pwd = document.getElementById('admin-pwd').value;
+      if (pwd === ADMIN_SECRET) {
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('main-section').classList.remove('hidden');
+      } else {
+        alert('管理密碼錯誤！');
+      }
+    }
+
+    async function searchMember() {
+      const query = document.getElementById('search-input').value.trim();
+      if (!query) return alert('請輸入姓名或手機號碼');
+
+      try {
+        const { data, error } = await supabase
+          .from('members')
+          .select('*, hour_ledgers!hour_ledgers_member_id_fkey(balance_after)')
+          .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!data) {
+          alert('找不到符合條件的會員！');
+          document.getElementById('member-card').classList.add('hidden');
+          selectedMember = null;
+          return;
+        }
+
+        selectedMember = data;
+        const ledgers = data.hour_ledgers || [];
+        const currentBalance = ledgers.length > 0 ? ledgers[ledgers.length - 1].balance_after : 0;
+
+        document.getElementById('card-name').innerText = data.name;
+        document.getElementById('card-phone').innerText = `手機：${data.phone}`;
+        document.getElementById('card-ref').innerText = `推薦碼：${data.referral_code}`;
+        document.getElementById('card-balance').innerText = currentBalance;
+        document.getElementById('deduct-mins').value = '';
+        document.getElementById('deduct-notes').value = '';
+
+        document.getElementById('member-card').classList.remove('hidden');
+      } catch (err) {
+        alert('查詢出錯：' + err.message);
+      }
+    }
+
+    async function submitDeduction() {
+      if (!selectedMember) return;
+      const mins = parseInt(document.getElementById('deduct-mins').value, 10);
+      const notes = document.getElementById('deduct-notes').value.trim();
+
+      if (!mins || mins <= 0) return alert('請輸入有效的扣除分鐘數！');
+      if (!confirm(`確定要為會員【${selectedMember.name}】扣除 ${mins} 分鐘嗎？`)) return;
+
+      try {
+        const { data, error } = await supabase.rpc('admin_deduct_hours', {
+          p_member_id: selectedMember.id,
+          p_minutes: mins,
+          p_notes: notes || '管理員手動扣除'
+        });
+
+        if (error) throw error;
+
+        if (!data.success) {
+          alert(data.message);
+        } else {
+          alert(data.message);
+          // 重新整理目前卡片的餘額
+          document.getElementById('card-balance').innerText = data.new_balance;
+          document.getElementById('deduct-mins').value = '';
+          document.getElementById('deduct-notes').value = '';
+        }
+      } catch (err) {
+        alert('核銷失敗：' + err.message);
+      }
+    }
+  </script>
+</body>
+</html>
