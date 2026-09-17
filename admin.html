@@ -24,25 +24,21 @@
       <div id="auth-section" class="bg-amber-50 border border-amber-200 p-4 rounded-lg">
         <label class="block text-sm font-bold text-amber-800 mb-1">管理員登入金鑰 (預設: 119rescue)</label>
         <div class="flex gap-2">
-          <input id="admin-pwd" type="password" placeholder="請輸入管理密碼" class="flex-1 p-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500">
-          <button onclick="unlockAdmin()" class="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">驗證解鎖</button>
+          <input id="admin-pwd" type="password" placeholder="請輸入管理密碼" class="flex-1 p-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500" onkeydown="if(event.key==='Enter') unlockAdmin()">
+          <button id="unlock-btn" onclick="unlockAdmin()" class="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">驗證解鎖</button>
         </div>
       </div>
 
-      <!-- 2. 操作主區域 (驗證後顯示) -->
+      <!-- 2. 操作主區域 -->
       <div id="main-section" class="hidden space-y-6">
-        <!-- 搜尋欄位 -->
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1">查詢會員 (輸入姓名或手機)</label>
           <div class="flex gap-2">
-            <input id="search-input" type="text" placeholder="例：丁一名 或 0911222333" class="flex-1 p-3 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500">
-            <button onclick="searchMember()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-semibold flex items-center gap-1">
-              搜尋
-            </button>
+            <input id="search-input" type="text" placeholder="例：丁一名 或 0911222333" class="flex-1 p-3 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" onkeydown="if(event.key==='Enter') searchMember()">
+            <button onclick="searchMember()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-semibold">搜尋</button>
           </div>
         </div>
 
-        <!-- 查詢結果與扣時操作卡片 -->
         <div id="member-card" class="hidden border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
           <div class="flex justify-between items-start border-b pb-3">
             <div>
@@ -57,7 +53,6 @@
             </div>
           </div>
 
-          <!-- 扣除操作表單 -->
           <div class="space-y-3 pt-1">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
@@ -74,7 +69,6 @@
             </button>
           </div>
         </div>
-
       </div>
     </div>
   </div>
@@ -82,19 +76,21 @@
   <script>
     const SUPABASE_URL = "https://dizyvpzxixrvtrmudfgd.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_qwhSuOqHO1kaZaNWf1GF2w_O-zSFXWx";
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
+    // 改用 dbClient 變數名稱，避開與 window.supabase 衝突
+    const dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // 預設管理員密碼（可自行在下方改掉）
     const ADMIN_SECRET = "119rescue";
     let selectedMember = null;
 
     function unlockAdmin() {
-      const pwd = document.getElementById('admin-pwd').value;
+      const pwdInput = document.getElementById('admin-pwd');
+      const pwd = pwdInput ? pwdInput.value.trim() : '';
       if (pwd === ADMIN_SECRET) {
         document.getElementById('auth-section').classList.add('hidden');
         document.getElementById('main-section').classList.remove('hidden');
       } else {
-        alert('管理密碼錯誤！');
+        alert('管理密碼錯誤！您輸入的是：' + (pwd || '(空白)'));
       }
     }
 
@@ -103,9 +99,9 @@
       if (!query) return alert('請輸入姓名或手機號碼');
 
       try {
-        const { data, error } = await supabase
+        const { data, error } = await dbClient
           .from('members')
-          .select('*, hour_ledgers!hour_ledgers_member_id_fkey(balance_after)')
+          .select('*, hour_ledgers(balance_after)')
           .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
           .limit(1)
           .maybeSingle();
@@ -144,7 +140,7 @@
       if (!confirm(`確定要為會員【${selectedMember.name}】扣除 ${mins} 分鐘嗎？`)) return;
 
       try {
-        const { data, error } = await supabase.rpc('admin_deduct_hours', {
+        const { data, error } = await dbClient.rpc('admin_deduct_hours', {
           p_member_id: selectedMember.id,
           p_minutes: mins,
           p_notes: notes || '管理員手動扣除'
@@ -156,7 +152,6 @@
           alert(data.message);
         } else {
           alert(data.message);
-          // 重新整理目前卡片的餘額
           document.getElementById('card-balance').innerText = data.new_balance;
           document.getElementById('deduct-mins').value = '';
           document.getElementById('deduct-notes').value = '';
