@@ -76,8 +76,6 @@
   <script>
     const SUPABASE_URL = "https://dizyvpzxixrvtrmudfgd.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_qwhSuOqHO1kaZaNWf1GF2w_O-zSFXWx";
-    
-    // 改用 dbClient 變數名稱，避開與 window.supabase 衝突
     const dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const ADMIN_SECRET = "119rescue";
@@ -99,28 +97,38 @@
       if (!query) return alert('請輸入姓名或手機號碼');
 
       try {
-        const { data, error } = await dbClient
+        // 1. 先查會員基本資料
+        const { data: member, error: memberErr } = await dbClient
           .from('members')
-          .select('*, hour_ledgers(balance_after)')
+          .select('id, name, phone, referral_code')
           .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
           .limit(1)
           .maybeSingle();
 
-        if (error) throw error;
-        if (!data) {
+        if (memberErr) throw memberErr;
+        if (!member) {
           alert('找不到符合條件的會員！');
           document.getElementById('member-card').classList.add('hidden');
           selectedMember = null;
           return;
         }
 
-        selectedMember = data;
-        const ledgers = data.hour_ledgers || [];
-        const currentBalance = ledgers.length > 0 ? ledgers[ledgers.length - 1].balance_after : 0;
+        // 2. 獨立查詢該會員最新的時數餘額，避免關聯模糊
+        const { data: ledgers, error: ledgerErr } = await dbClient
+          .from('hour_ledgers')
+          .select('balance_after')
+          .eq('member_id', member.id)
+          .order('id', { ascending: false })
+          .limit(1);
 
-        document.getElementById('card-name').innerText = data.name;
-        document.getElementById('card-phone').innerText = `手機：${data.phone}`;
-        document.getElementById('card-ref').innerText = `推薦碼：${data.referral_code}`;
+        if (ledgerErr) throw ledgerErr;
+
+        selectedMember = member;
+        const currentBalance = (ledgers && ledgers.length > 0) ? ledgers[0].balance_after : 0;
+
+        document.getElementById('card-name').innerText = member.name;
+        document.getElementById('card-phone').innerText = `手機：${member.phone}`;
+        document.getElementById('card-ref').innerText = `推薦碼：${member.referral_code}`;
         document.getElementById('card-balance').innerText = currentBalance;
         document.getElementById('deduct-mins').value = '';
         document.getElementById('deduct-notes').value = '';
