@@ -32,9 +32,9 @@
       <!-- 2. 操作主區域 -->
       <div id="main-section" class="hidden space-y-6">
         <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1">查詢會員 (輸入姓名或手機)</label>
+          <label class="block text-sm font-semibold text-slate-700 mb-1">查詢會員 (輸入車牌號碼)</label>
           <div class="flex gap-2">
-            <input id="search-input" type="text" placeholder="例：丁一名 或 0911222333" class="flex-1 p-3 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" onkeydown="if(event.key==='Enter') searchMember()">
+            <input id="search-input" type="text" oninput="this.value = this.value.toUpperCase()" placeholder="例：ABC-1234 或輸入部分數字 1234" class="flex-1 p-3 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 uppercase" onkeydown="if(event.key==='Enter') searchMember()">
             <button onclick="searchMember()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-sm font-semibold">搜尋</button>
           </div>
         </div>
@@ -42,8 +42,8 @@
         <div id="member-card" class="hidden border border-slate-200 rounded-xl p-5 bg-slate-50 space-y-4">
           <div class="flex justify-between items-start border-b pb-3">
             <div>
-              <div class="text-lg font-bold text-slate-800" id="card-name">--</div>
-              <div class="text-xs text-slate-500 mt-0.5" id="card-phone">--</div>
+              <div class="text-xl font-extrabold text-slate-800 tracking-wide" id="card-plate">--</div>
+              <div class="text-xs font-semibold text-slate-600 mt-1" id="card-vehicle">--</div>
               <div class="text-xs text-slate-400 mt-0.5" id="card-ref">--</div>
             </div>
             <div class="text-right">
@@ -94,26 +94,26 @@
 
     async function searchMember() {
       const query = document.getElementById('search-input').value.trim();
-      if (!query) return alert('請輸入姓名或手機號碼');
+      if (!query) return alert('請輸入車牌號碼');
 
       try {
-        // 1. 先查會員基本資料
+        // 1. 依車牌號碼 (phone欄位)、車輛類型 (name欄位) 或推薦碼查詢
         const { data: member, error: memberErr } = await dbClient
           .from('members')
           .select('id, name, phone, referral_code')
-          .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
+          .or(`phone.ilike.%${query}%,name.ilike.%${query}%,referral_code.ilike.%${query}%`)
           .limit(1)
           .maybeSingle();
 
         if (memberErr) throw memberErr;
         if (!member) {
-          alert('找不到符合條件的會員！');
+          alert('找不到符合該車牌的會員！');
           document.getElementById('member-card').classList.add('hidden');
           selectedMember = null;
           return;
         }
 
-        // 2. 獨立查詢該會員最新的時數餘額，避免關聯模糊
+        // 2. 獨立查詢該會員最新的時數餘額
         const { data: ledgers, error: ledgerErr } = await dbClient
           .from('hour_ledgers')
           .select('balance_after')
@@ -126,8 +126,8 @@
         selectedMember = member;
         const currentBalance = (ledgers && ledgers.length > 0) ? ledgers[0].balance_after : 0;
 
-        document.getElementById('card-name').innerText = member.name;
-        document.getElementById('card-phone').innerText = `手機：${member.phone}`;
+        document.getElementById('card-plate').innerText = `車牌號碼：${member.phone}`;
+        document.getElementById('card-vehicle').innerText = `車輛類型：${member.name}`;
         document.getElementById('card-ref').innerText = `推薦碼：${member.referral_code}`;
         document.getElementById('card-balance').innerText = currentBalance;
         document.getElementById('deduct-mins').value = '';
@@ -145,29 +145,8 @@
       const notes = document.getElementById('deduct-notes').value.trim();
 
       if (!mins || mins <= 0) return alert('請輸入有效的扣除分鐘數！');
-      if (!confirm(`確定要為會員【${selectedMember.name}】扣除 ${mins} 分鐘嗎？`)) return;
+      if (!confirm(`確定要為車牌【${selectedMember.phone}】(${selectedMember.name}) 扣除 ${mins} 分鐘嗎？`)) return;
 
       try {
         const { data, error } = await dbClient.rpc('admin_deduct_hours', {
-          p_member_id: selectedMember.id,
-          p_minutes: mins,
-          p_notes: notes || '管理員手動扣除'
-        });
-
-        if (error) throw error;
-
-        if (!data.success) {
-          alert(data.message);
-        } else {
-          alert(data.message);
-          document.getElementById('card-balance').innerText = data.new_balance;
-          document.getElementById('deduct-mins').value = '';
-          document.getElementById('deduct-notes').value = '';
-        }
-      } catch (err) {
-        alert('核銷失敗：' + err.message);
-      }
-    }
-  </script>
-</body>
-</html>
+          p_member_id: selectedMember.id
