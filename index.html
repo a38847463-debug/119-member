@@ -153,4 +153,56 @@
         } else {
           currentRefCode = member.referral_code;
           const ledgers = member.hour_ledgers || [];
-          const latestBalance = ledgers.length > 0 ? led
+          const latestBalance = ledgers.length > 0 ? ledgers[ledgers.length - 1].balance_after : 0;
+          const refRewards = ledgers.filter(l => l.change_type === 'REFERRAL').length;
+
+          const displayLabel = member.phone ? `${member.name}｜${member.phone}` : `${member.name} 您好`;
+          document.getElementById('user-name').innerText = displayLabel;
+          document.getElementById('user-minutes').innerText = latestBalance;
+          document.getElementById('ref-count').innerText = `已推薦 ${refRewards} / 3 人`;
+          document.getElementById('dashboard-view').classList.remove('hidden');
+        }
+      } catch (err) {
+        alert("查詢會員異常: " + err.message);
+      }
+    }
+
+    async function handleRegister() {
+      const vehicleType = document.getElementById('reg-vehicle-type').value;
+      const plate = document.getElementById('reg-plate').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+      if (!plate) return alert('請輸入您的車牌號碼');
+
+      try {
+        const { data, error } = await supabaseClient.rpc('register_member', {
+          p_line_user_id: currentLineUserId,
+          p_phone: plate,
+          p_name: vehicleType,
+          p_ref_code: incomingRefCode
+        });
+
+        if (error || !data.success) {
+          alert(data?.message || error?.message || '註冊失敗，此車牌或帳號可能已註冊過');
+        } else {
+          alert('加入成功！已為您入帳 30 分鐘救援權益');
+          location.reload();
+        }
+      } catch (err) {
+        alert("連線錯誤: " + err.message);
+      }
+    }
+
+    function shareReferral() {
+      const shareUrl = `https://liff.line.me/${LIFF_ID}?ref=${currentRefCode}`;
+      const text = `我送你 30 分鐘 119 事故資訊協助，平常可能用不到，真出事的時候你會知道它值多少！點擊加入領取：${shareUrl}`;
+      navigator.clipboard.writeText(text).then(() => {
+        alert('專屬推薦邀請已複製到剪貼簿，可直接貼上傳給好友！');
+      }).catch(() => {
+        prompt('請手動複製以下推薦文字與連結：', text);
+      });
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
