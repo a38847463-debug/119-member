@@ -176,7 +176,7 @@
 
     async function handleRegister() {
       const vehicleType = document.getElementById('reg-vehicle-type').value;
-      const plate = document.getElementById('reg-plate').value.trim().toUpperCase();
+      const plate = document.getElementById('reg-plate').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
       const refCode = document.getElementById('reg-ref').value.trim();
 
       if (!plate) return alert('請輸入您的車牌號碼');
