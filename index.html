@@ -21,17 +21,32 @@
     <!-- 1. 註冊畫面 -->
     <div id="register-view" class="hidden space-y-4">
       <div>
-        <label class="block text-sm font-medium text-gray-700">姓名</label>
-        <input id="reg-name" type="text" class="w-full mt-1 p-3 border rounded-lg focus:ring-2 focus:ring-red-500 outline-none" placeholder="請輸入姓名">
+        <label class="block text-sm font-medium text-gray-700 mb-2">車輛類型（請點選）</label>
+        <div class="grid grid-cols-2 gap-3">
+          <button type="button" id="btn-car" onclick="selectVehicle('汽車')"
+            class="py-3 px-4 border-2 border-red-600 bg-red-50 text-red-700 font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2">
+            🚗 汽車
+          </button>
+          <button type="button" id="btn-scooter" onclick="selectVehicle('機車')"
+            class="py-3 px-4 border-2 border-gray-200 bg-white text-gray-600 font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2">
+            🛵 機車
+          </button>
+        </div>
+        <input type="hidden" id="reg-vehicle-type" value="汽車">
       </div>
+
       <div>
-        <label class="block text-sm font-medium text-gray-700">手機號碼</label>
-        <input id="reg-phone" type="tel" class="w-full mt-1 p-3 border rounded-lg focus:ring-2 focus:ring-red-500 outline-none" placeholder="09xxxxxxxx">
+        <label class="block text-sm font-medium text-gray-700">車牌號碼</label>
+        <input id="reg-plate" type="text" oninput="this.value = this.value.toUpperCase()"
+          class="w-full mt-1 p-3 border rounded-lg focus:ring-2 focus:ring-red-500 outline-none uppercase"
+          placeholder="例如：ABC-1234">
       </div>
+
       <div>
         <label class="block text-sm font-medium text-gray-700">推薦碼（選填）</label>
         <input id="reg-ref" type="text" class="w-full mt-1 p-3 border rounded-lg bg-gray-50" placeholder="若有推薦人請填寫">
       </div>
+
       <button onclick="handleRegister()" class="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition duration-200">
         領取 30 分鐘救援權益
       </button>
@@ -40,7 +55,7 @@
     <!-- 2. 會員中心 -->
     <div id="dashboard-view" class="hidden space-y-6">
       <div class="bg-gradient-to-r from-red-500 to-red-600 rounded-xl p-5 text-white shadow-lg">
-        <p class="text-sm opacity-80" id="user-name">會員</p>
+        <p class="text-sm opacity-90 font-medium" id="user-name">會員</p>
         <div class="mt-2 flex items-baseline justify-between">
           <div>
             <span class="text-4xl font-extrabold" id="user-minutes">0</span>
@@ -77,6 +92,21 @@
     let currentLineUserId = "";
     let currentRefCode = "";
 
+    // 切換汽車 / 機車點選狀態
+    function selectVehicle(type) {
+      document.getElementById('reg-vehicle-type').value = type;
+      const btnCar = document.getElementById('btn-car');
+      const btnScooter = document.getElementById('btn-scooter');
+
+      if (type === '汽車') {
+        btnCar.className = "py-3 px-4 border-2 border-red-600 bg-red-50 text-red-700 font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2";
+        btnScooter.className = "py-3 px-4 border-2 border-gray-200 bg-white text-gray-600 font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2";
+      } else {
+        btnScooter.className = "py-3 px-4 border-2 border-red-600 bg-red-50 text-red-700 font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2";
+        btnCar.className = "py-3 px-4 border-2 border-gray-200 bg-white text-gray-600 font-bold rounded-xl transition duration-150 flex items-center justify-center gap-2";
+      }
+    }
+
     async function initApp() {
       try {
         if (!window.supabase) {
@@ -111,7 +141,6 @@
 
     async function checkMembership() {
       try {
-        // 明確指定透過 member_id 外鍵關聯，解決多重外鍵衝突
         const { data: member, error } = await supabaseClient
           .from('members')
           .select('*, hour_ledgers!hour_ledgers_member_id_fkey(balance_after, change_type)')
@@ -133,7 +162,9 @@
           const latestBalance = ledgers.length > 0 ? ledgers[ledgers.length - 1].balance_after : 0;
           const refRewards = ledgers.filter(l => l.change_type === 'REFERRAL').length;
 
-          document.getElementById('user-name').innerText = `${member.name} 您好`;
+          // 會員卡片上方顯示：車型 + 車牌號碼（相容舊會員顯示）
+          const displayLabel = member.phone ? `${member.name}｜${member.phone}` : `${member.name} 您好`;
+          document.getElementById('user-name').innerText = displayLabel;
           document.getElementById('user-minutes').innerText = latestBalance;
           document.getElementById('ref-count').innerText = `已推薦 ${refRewards} / 3 人`;
           document.getElementById('dashboard-view').classList.remove('hidden');
@@ -144,22 +175,22 @@
     }
 
     async function handleRegister() {
-      const name = document.getElementById('reg-name').value.trim();
-      const phone = document.getElementById('reg-phone').value.trim();
+      const vehicleType = document.getElementById('reg-vehicle-type').value;
+      const plate = document.getElementById('reg-plate').value.trim().toUpperCase();
       const refCode = document.getElementById('reg-ref').value.trim();
 
-      if (!name || !phone) return alert('請填寫完整姓名與手機號碼');
+      if (!plate) return alert('請輸入您的車牌號碼');
 
       try {
         const { data, error } = await supabaseClient.rpc('register_member', {
           p_line_user_id: currentLineUserId,
-          p_phone: phone,
-          p_name: name,
+          p_phone: plate,
+          p_name: vehicleType,
           p_ref_code: refCode
         });
 
         if (error || !data.success) {
-          alert(data?.message || error?.message || '註冊失敗');
+          alert(data?.message || error?.message || '註冊失敗，此車牌或帳號可能已註冊過');
         } else {
           alert('加入成功！已為您入帳 30 分鐘救援權益');
           location.reload();
